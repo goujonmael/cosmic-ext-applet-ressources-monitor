@@ -3,8 +3,8 @@ prefix := '/usr'
 debug := '0'
 
 
-export NAME := 'cosmic-ext-applet-netspeed'
-export APPID := 'io.github.khanra17.' + NAME
+export NAME := 'cosmic-ext-applet-ressources-monitor'
+export APPID := 'io.github.goujonmael.' + NAME
 
 cargo-target-dir := env('CARGO_TARGET_DIR', 'target')
 bin-src := cargo-target-dir / if debug == '1' { 'debug' / NAME } else { 'release' / NAME }
@@ -38,4 +38,4 @@ clean:
   cargo clean
 
 run:
-  flatpak run io.github.khanra17.cosmic-ext-applet-netspeed
+  flatpak run io.github.goujonmael.cosmic-ext-applet-ressources-monitor

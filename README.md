@@ -1,8 +1,11 @@
-# NetSpeed Applet for COSMIC™ Desktop Environment
+# Ressources Monitor Applet for COSMIC™ Desktop Environment
+
+> Fork: this repository is a fork of `https://github.com/khanra17/cosmic-ext-applet-netspeed`.
+> Original project by `khanra17` — this fork is available at `https://github.com/goujonmael/cosmic-ext-applet-ressources-monitor`.
 
 ![screenshot of the applet](res/screenshots/panel.png)
 
-This is a network speed monitoring applet designed for the COSMIC desktop environment. It displays real-time download and upload speeds directly in your panel.
+Cet applet surveille les ressources système (CPU, fréquence, température, RAM) pour l'environnement de bureau COSMIC™. Il affiche les métriques en temps réel directement dans votre panneau.
 
 ## Features
 
@@ -30,8 +33,8 @@ sudo apt install just cargo
 1. Clone the repository:
 
 ```sh
-git clone https://github.com/khanra17/cosmic-ext-applet-netspeed.git
-cd cosmic-ext-applet-netspeed
+git clone https://github.com/goujonmael/cosmic-ext-applet-ressources-monitor.git
+cd cosmic-ext-applet-ressources-monitor
 ```
 
 2. Build the release version:

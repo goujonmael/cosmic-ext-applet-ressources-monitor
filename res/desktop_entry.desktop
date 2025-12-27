@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=NetSpeed
-Comment=A cosmic netspeed applet
-Keywords=Cosmic;Iced;network;
-Icon=io.github.khanra17.cosmic-ext-applet-netspeed-symbolic
+Name=Ressources Monitor
+Comment=Un applet de surveillance des ressources pour Cosmic
+Keywords=Cosmic;Iced;resources;cpu;memory;
+Icon=io.github.goujonmael.cosmic-ext-applet-ressources-monitor-symbolic
 Categories=Cosmic;Iced;
 Type=Application
-Exec=cosmic-ext-applet-netspeed
+Exec=cosmic-ext-applet-ressources-monitor
 Terminal=false
 StartupNotify=true
 NoDisplay=true

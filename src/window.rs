@@ -9,12 +9,15 @@ use cosmic::{
     Element,
 };
 
+use sysinfo::{System, SystemExt, CpuExt, ComponentExt};
+
 pub struct Window {
     core: cosmic::app::Core,
-    rx_speed: f64, // Download speed in MB/s
-    tx_speed: f64, // Upload speed in MB/s
-    last_rx: u64,  // Last received bytes
-    last_tx: u64,  // Last transmitted bytes
+    sys: System,
+    cpu_usage: f32,    // CPU usage in percent
+    avg_freq: u64,     // Average CPU frequency in MHz
+    cpu_temp: f32,     // CPU temperature in °C
+    ram_percent: f32,  // RAM usage in percent
 }
 
 #[derive(Debug, Clone)]
@@ -23,39 +26,60 @@ pub enum Message {
 }
 
 impl Window {
-    fn format_speed(speed: f64) -> String {
-        if speed >= 1.0 {
-            format!("{:.1} MB/s", speed)
-        } else {
-            format!("{:.1} KB/s", speed * 1024.0)
-        }
+    fn format_percent(value: f32) -> String {
+        format!("{:.1}%", value)
     }
 
-    fn update_speeds(&mut self) {
-        // Read current network stats
-        if let Ok(stats) = std::fs::read_to_string("/proc/net/dev") {
-            let mut rx_bytes = 0;
-            let mut tx_bytes = 0;
+    fn format_freq(mhz: u64) -> String {
+        format!("{} MHz", mhz)
+    }
 
-            // Parse network interface statistics
-            for line in stats.lines().skip(2) {
-                // Skip header lines
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() > 9 && !parts[0].starts_with("lo:") {
-                    rx_bytes += parts[1].parse::<u64>().unwrap_or(0);
-                    tx_bytes += parts[9].parse::<u64>().unwrap_or(0);
-                }
-            }
+    fn format_temp(temp: f32) -> String {
+        format!("{:.1} °C", temp)
+    }
 
-            // Calculate speeds
-            let rx_diff = rx_bytes.saturating_sub(self.last_rx);
-            let tx_diff = tx_bytes.saturating_sub(self.last_tx);
+    fn update_metrics(&mut self) {
+        self.sys.refresh_cpu();
+        self.sys.refresh_memory();
+        self.sys.refresh_components();
 
-            self.rx_speed = rx_diff as f64 / (1024.0 * 1024.0); // Convert to MB/s
-            self.tx_speed = tx_diff as f64 / (1024.0 * 1024.0);
+        let cpus = self.sys.cpus();
+        if !cpus.is_empty() {
+            let total_usage: f32 = cpus.iter().map(|c| c.cpu_usage()).sum::<f32>();
+            self.cpu_usage = total_usage / (cpus.len() as f32);
 
-            self.last_rx = rx_bytes;
-            self.last_tx = tx_bytes;
+            let total_freq: u64 = cpus.iter().map(|c| c.frequency() as u64).sum::<u64>();
+            self.avg_freq = total_freq / (cpus.len() as u64);
+        } else {
+            self.cpu_usage = 0.0;
+            self.avg_freq = 0;
+        }
+
+        let components = self.sys.components();
+        let temps: Vec<f32> = components
+            .iter()
+            .filter(|c| {
+                let l = c.label().to_lowercase();
+                l.contains("cpu") || l.contains("package")
+            })
+            .map(|c| c.temperature())
+            .collect();
+
+        if !temps.is_empty() {
+            let sum: f32 = temps.iter().copied().sum();
+            self.cpu_temp = sum / (temps.len() as f32);
+        } else if !components.is_empty() {
+            self.cpu_temp = components.iter().map(|c| c.temperature()).fold(0.0_f32, |a, b| a.max(b));
+        } else {
+            self.cpu_temp = 0.0;
+        }
+
+        let total_ram = self.sys.total_memory() as f32;
+        let used_ram = self.sys.used_memory() as f32;
+        if total_ram > 0.0 {
+            self.ram_percent = (used_ram / total_ram) * 100.0;
+        } else {
+            self.ram_percent = 0.0;
         }
     }
 }
@@ -64,22 +88,29 @@ impl cosmic::Application for Window {
     type Message = Message;
     type Executor = cosmic::SingleThreadExecutor;
     type Flags = ();
-    const APP_ID: &'static str = "io.github.khanra17.cosmic-ext-applet-netspeed";
+    const APP_ID: &'static str = "io.github.khanra17.ressources-monitor";
 
     fn init(
         core: app::Core,
         _flags: Self::Flags,
     ) -> (Self, cosmic::iced::Task<app::Message<Self::Message>>) {
-        (
-            Self {
-                core,
-                rx_speed: 0.0,
-                tx_speed: 0.0,
-                last_rx: 0,
-                last_tx: 0,
-            },
-            cosmic::iced::Task::none(),
-        )
+        let mut sys = System::new_all();
+        sys.refresh_cpu();
+        sys.refresh_memory();
+        sys.refresh_components();
+
+        let mut window = Self {
+            core,
+            sys,
+            cpu_usage: 0.0,
+            avg_freq: 0,
+            cpu_temp: 0.0,
+            ram_percent: 0.0,
+        };
+
+        window.update_metrics();
+
+        (window, cosmic::iced::Task::none())
     }
 
     fn core(&self) -> &cosmic::app::Core {
@@ -98,14 +129,13 @@ impl cosmic::Application for Window {
         cosmic::iced::time::every(std::time::Duration::from_secs(1)).map(|_| Message::Tick)
     }
 
-    fn update(&mut self, message: Message) -> cosmic::iced::Task<app::Message<Self::Message>> {
-        if let Message::Tick = message {
-            self.update_speeds();
-        }
+    fn update(&mut self, _message: Message) -> cosmic::iced::Task<app::Message<Self::Message>> {
+        // Only Tick exists, on every tick refresh metrics
+        self.update_metrics();
         cosmic::iced::Task::none()
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let horizontal = matches!(
             self.core.applet.anchor,
             PanelAnchor::Top | PanelAnchor::Bottom
@@ -113,17 +143,21 @@ impl cosmic::Application for Window {
 
         let content = if horizontal {
             row![
-                text(format!("↓{}", Self::format_speed(self.rx_speed))),
-                text(format!("↑{}", Self::format_speed(self.tx_speed))),
+                text(format!("CPU {}", Self::format_percent(self.cpu_usage))),
+                text(format!("{}", Self::format_freq(self.avg_freq))),
+                text(format!("{}", Self::format_temp(self.cpu_temp))),
+                text(format!("RAM {}", Self::format_percent(self.ram_percent))),
             ]
-            .spacing(5)
+            .spacing(8)
             .align_y(Alignment::Center)
         } else {
             row![
-                text(format!("↓{}", Self::format_speed(self.rx_speed))),
-                text(format!("↑{}", Self::format_speed(self.tx_speed))),
+                text(format!("CPU {}", Self::format_percent(self.cpu_usage))),
+                text(format!("{}", Self::format_freq(self.avg_freq))),
+                text(format!("{}", Self::format_temp(self.cpu_temp))),
+                text(format!("RAM {}", Self::format_percent(self.ram_percent))),
             ]
-            .spacing(5)
+            .spacing(4)
             .align_y(Alignment::Center)
         };
 
