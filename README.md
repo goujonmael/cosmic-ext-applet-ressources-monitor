@@ -1,4 +1,4 @@
-# Resources Monitor — COSMIC™ Applet
+# Resources Monitor - COSMIC™ Applet
 
 ![screenshot of the applet](res/screenshots/top_panel.png)
 
