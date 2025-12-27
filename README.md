@@ -1,68 +1,81 @@
-# Ressources Monitor Applet for COSMIC™ Desktop Environment
+# Resources Monitor — COSMIC™ Applet
 
-> Fork: this repository is a fork of `https://github.com/khanra17/cosmic-ext-applet-netspeed`.
-> Original project by `khanra17` — this fork is available at `https://github.com/goujonmael/cosmic-ext-applet-ressources-monitor`.
+![screenshot of the applet](res/screenshots/top_panel.png)
 
-![screenshot of the applet](res/screenshots/panel.png)
+Resources Monitor is a panel applet for the COSMIC™ desktop environment that displays key system metrics in real time:
 
-Cet applet surveille les ressources système (CPU, fréquence, température, RAM) pour l'environnement de bureau COSMIC™. Il affiche les métriques en temps réel directement dans votre panneau.
+- CPU usage (%),
+- Average CPU frequency (MHz),
+- CPU temperature (°C),
+- RAM usage (%).
 
-## Features
+**Features**
 
-- Real-time monitoring of download and upload speeds.
-- Automatic conversion between KB/s and MB/s for clear readability.
-- Seamless integration with the COSMIC panel.
+- Periodic refresh (1s)
+- Implemented in Rust and integrated with `libcosmic` / Iced
+- Uses the `sysinfo` crate to gather system metrics
 
-## Installation
+**Prerequisites**
 
-### Prerequisites
+Install the required build tools:
 
-Before installing, ensure you have the following packages installed:
-
-- `just`
-- `cargo`
-
-You can install them on Debian-based systems with:
-
-```sh
-sudo apt install just cargo
+```bash
+sudo apt install just cargo build-essential
 ```
 
-### Steps
+For CPU temperature readings, ensure your sensors are available (for example `lm-sensors` and the appropriate kernel drivers). Test with:
 
-1. Clone the repository:
+```bash
+sudo apt install lm-sensors
+sudo sensors-detect
+sensors
+```
 
-```sh
+**Installation**
+
+1. Clone this fork:
+
+```bash
 git clone https://github.com/goujonmael/cosmic-ext-applet-ressources-monitor.git
 cd cosmic-ext-applet-ressources-monitor
 ```
 
-2. Build the release version:
+2. Build the release and install:
 
-```sh
+```bash
 just build-release
-```
-
-3. Install the applet:
-
-```sh
 sudo just install
 ```
-## Credits
 
-This project was heavily inspired by the [cosmic-utils clipboard manager](https://github.com/cosmic-utils/clipboard-manager).
+For development (debug build + install):
 
-## Contributing
-
-Contributions are welcome! If you'd like to contribute:
-
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Make your changes and ensure the code builds without errors.
-4. Submit a pull request with a clear description of your changes.
-
-To build and install the debug build for development:
-
-```sh
+```bash
 just build-debug && sudo just debug=1 install && pkill cosmic-panel
 ```
+
+**Usage**
+
+After installation the applet should appear in the COSMIC applet list. You can also run the binary directly:
+
+```bash
+/usr/bin/cosmic-ext-applet-ressources-monitor
+```
+
+**Development**
+
+- Main UI logic lives in `src/window.rs`.
+- Metrics are collected via the `sysinfo` crate (see `Cargo.toml`).
+
+If you want to modify or extend the applet, start by exploring `src/window.rs` and the other files in `src/`.
+
+**Contributing**
+
+This repository is a fork of the original netspeed applet by `khanra17`. To contribute:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes and open a pull request
+
+**License**
+
+This project is licensed under the GPL-3.0 License.
