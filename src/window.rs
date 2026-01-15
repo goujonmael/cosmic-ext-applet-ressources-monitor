@@ -10,6 +10,8 @@ use cosmic::{
 };
 
 use sysinfo::{System, SystemExt, CpuExt, ComponentExt};
+use std::fs;
+use std::path::Path;
 
 pub struct Window {
     core: cosmic::app::Core,
@@ -55,6 +57,22 @@ impl Window {
             self.avg_freq = 0;
         }
 
+        // Diagnostic: log per-CPU frequency reported by sysinfo
+        let list: Vec<u64> = cpus.iter().map(|c| c.frequency() as u64).collect();
+        eprintln!("[diag] sysinfo per-cpu freqs (MHz): {:?}", list);
+        eprintln!("[diag] sysinfo avg_freq (MHz): {}", self.avg_freq);
+
+        // Try to read current frequency from sysfs (scaling_cur_freq) as a more
+        // reliable, up-to-date fallback on Linux systems. Values are in kHz
+        // there so convert to MHz. If sysfs is not available, try /proc/cpuinfo.
+        if let Some(mhz) = Self::read_freq_sysfs() {
+            eprintln!("[diag] sysfs avg_freq (MHz): {}", mhz);
+            self.avg_freq = mhz;
+        } else if let Some(mhz_proc) = Self::read_freq_proc_cpuinfo() {
+            eprintln!("[diag] /proc/cpuinfo avg_freq (MHz): {}", mhz_proc);
+            self.avg_freq = mhz_proc;
+        }
+
         let components = self.sys.components();
         let temps: Vec<f32> = components
             .iter()
@@ -80,6 +98,61 @@ impl Window {
             self.ram_percent = (used_ram / total_ram) * 100.0;
         } else {
             self.ram_percent = 0.0;
+        }
+    }
+
+    fn read_freq_sysfs() -> Option<u64> {
+        let cpu_dir = Path::new("/sys/devices/system/cpu");
+        let mut freqs_khz: Vec<u64> = Vec::new();
+
+        let entries = fs::read_dir(cpu_dir).ok()?;
+        for entry in entries.flatten() {
+            let name = entry.file_name().into_string().ok()?;
+            if !name.starts_with("cpu") {
+                continue;
+            }
+            // ensure the suffix is a CPU number (cpu0, cpu1, ...)
+            let suffix = &name[3..];
+            if suffix.is_empty() || !suffix.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+
+            let path = cpu_dir.join(name).join("cpufreq").join("scaling_cur_freq");
+            if let Ok(s) = fs::read_to_string(&path) {
+                if let Ok(khz) = s.trim().parse::<u64>() {
+                    freqs_khz.push(khz);
+                }
+            }
+        }
+
+        if freqs_khz.is_empty() {
+            None
+        } else {
+            let sum: u64 = freqs_khz.iter().sum();
+            let avg_khz = sum / (freqs_khz.len() as u64);
+            Some(avg_khz / 1000) // convert kHz -> MHz
+        }
+    }
+
+    fn read_freq_proc_cpuinfo() -> Option<u64> {
+        let s = fs::read_to_string("/proc/cpuinfo").ok()?;
+        let mut mhz_vals: Vec<f32> = Vec::new();
+        for line in s.lines() {
+            if line.starts_with("cpu MHz") {
+                if let Some(pos) = line.find(':') {
+                    let v = line[pos + 1..].trim();
+                    if let Ok(f) = v.parse::<f32>() {
+                        mhz_vals.push(f);
+                    }
+                }
+            }
+        }
+        if mhz_vals.is_empty() {
+            None
+        } else {
+            let sum: f32 = mhz_vals.iter().copied().sum();
+            let avg = sum / (mhz_vals.len() as f32);
+            Some(avg.round() as u64)
         }
     }
 }
