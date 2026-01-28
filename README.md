@@ -87,14 +87,14 @@ requirements to add:
 ```bash
 # Debian / Ubuntu
 sudo apt update
-sudo apt install rofi zenity
+sudo apt install rofi
 
 # Fedora
-sudo dnf install rofi zenity
+sudo dnf install rofi
 
 # Arch
-sudo pacman -Syu rofi zenity
+sudo pacman -Syu rofi
 
 # OpenSUSE
-sudo zypper install rofi zenity
+sudo zypper install rofi
 ```

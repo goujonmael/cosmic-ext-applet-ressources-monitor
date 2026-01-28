@@ -2,7 +2,7 @@ use cosmic::{
     app,
     applet::cosmic_panel_config::PanelAnchor,
     iced::{
-        widget::{row, text, column},
+        widget::{row, text},
         Alignment, Subscription,
     },
     widget::{autosize, button},
@@ -12,9 +12,6 @@ use cosmic::{
 use sysinfo::{System, SystemExt, CpuExt, ComponentExt};
 use std::fs;
 use std::path::Path;
-use crate::config;
-use std::process::Command;
-use std::thread;
 
 pub struct Window {
     core: cosmic::app::Core,
@@ -23,22 +20,14 @@ pub struct Window {
     avg_freq: u64,     // Average CPU frequency in MHz
     cpu_temp: f32,     // CPU temperature in °C
     ram_percent: f32,  // RAM usage in percent
-    show_sensor_menu: bool,
-    selected_sensor: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Tick,
-    ToggleMenu,
-    SelectSensor(String),
 }
 
 impl Window {
-    fn classify_label(label: &str) -> &'static str {
-        Self::classify_label_static(label)
-    }
-
     fn classify_label_static(label: &str) -> &'static str {
         let l = label.to_lowercase();
 
@@ -140,14 +129,9 @@ impl Window {
 
         let components = self.sys.components();
 
-        // Reload selection from disk in case external picker updated it
-        if let Some(s) = config::load_selected_sensor() {
-            self.selected_sensor = Some(s);
-        }
-
-        // Prefer a user-selected hwmon sensor when available, otherwise fallback to k10temp-pci-00c3
-        let preferred_label = self.selected_sensor.clone().unwrap_or_else(|| "k10temp-pci-00c3".to_string());
-        if let Some(pref) = components.iter().find(|c| c.label().to_lowercase() == preferred_label.to_lowercase()) {
+        // Prefer the requested hwmon sensor when available, otherwise fallback to CPU/package averages.
+        let preferred_label = "k10temp Tctl";
+        if let Some(pref) = components.iter().find(|c| c.label().eq_ignore_ascii_case(preferred_label)) {
             self.cpu_temp = pref.temperature();
         } else {
             let temps: Vec<f32> = components
@@ -256,8 +240,6 @@ impl cosmic::Application for Window {
             avg_freq: 0,
             cpu_temp: 0.0,
             ram_percent: 0.0,
-            show_sensor_menu: false,
-            selected_sensor: config::load_selected_sensor(),
         };
 
         window.update_metrics();
@@ -285,97 +267,6 @@ impl cosmic::Application for Window {
         match _message {
             Message::Tick => {
                 self.update_metrics();
-            }
-            Message::ToggleMenu => {
-                // Collect labels + temps so we can show temps and types next to labels in the picker
-                let components: Vec<(String, f32)> = self
-                    .sys
-                    .components()
-                    .iter()
-                    .map(|c| (c.label().to_string(), c.temperature()))
-                    .collect();
-                thread::spawn(move || {
-                    // Build entries as tuples (kind, label, temp), sort by kind then label,
-                    // then render as "TYPE — label — 42.3 °C"
-                    let mut entries: Vec<(String, String, f32)> = components
-                        .into_iter()
-                        .map(|(label, temp)| {
-                            let kind = Window::classify_label_static(&label).to_string();
-                            (kind, label, temp)
-                        })
-                        .collect();
-
-                    entries.sort_by(|a, b| {
-                        let cmp_kind = a.0.cmp(&b.0);
-                        if cmp_kind == std::cmp::Ordering::Equal {
-                            a.1.cmp(&b.1)
-                        } else {
-                            cmp_kind
-                        }
-                    });
-
-                    let display_entries: Vec<String> = entries
-                        .iter()
-                        .map(|(kind, label, temp)| format!("{} — {} — {:.1} °C", kind, label, temp))
-                        .collect();
-
-                    // Try rofi -dmenu
-                    let input = display_entries.join("\n");
-                    if let Ok(mut child) = Command::new("rofi")
-                        .arg("-dmenu")
-                        .arg("-p")
-                        .arg("Select sensor")
-                        .stdin(std::process::Stdio::piped())
-                        .stdout(std::process::Stdio::piped())
-                        .spawn()
-                    {
-                        if let Some(mut stdin) = child.stdin.take() {
-                            use std::io::Write;
-                            let _ = stdin.write_all(input.as_bytes());
-                        }
-                        if let Ok(output) = child.wait_with_output() {
-                            if output.status.success() {
-                                if let Ok(s) = String::from_utf8(output.stdout) {
-                                    let sel = s.trim().to_string();
-                                    if !sel.is_empty() {
-                                        // extract label part between the separators
-                                        // format: "TYPE — label — 42.3 °C"
-                                        let parts: Vec<&str> = sel.split(" — ").collect();
-                                        let label = if parts.len() >= 2 { parts[1].trim().to_string() } else { sel.clone() };
-                                        let _ = config::save_selected_sensor(&label);
-                                    }
-                                }
-                            }
-                        }
-                    } else if let Ok(output) = Command::new("zenity")
-                        .arg("--list")
-                        .arg("--column=Sensor")
-                        .args(display_entries.iter())
-                        .output()
-                    {
-                        if output.status.success() {
-                            if let Ok(s) = String::from_utf8(output.stdout) {
-                                let sel = s.trim().to_string();
-                                if !sel.is_empty() {
-                                    let parts: Vec<&str> = sel.split(" — ").collect();
-                                    let label = if parts.len() >= 2 { parts[1].trim().to_string() } else { sel.clone() };
-                                    let _ = config::save_selected_sensor(&label);
-                                }
-                            }
-                        }
-                    }
-
-                });
-
-                // keep the in-applet menu state for backward compatibility
-                self.show_sensor_menu = !self.show_sensor_menu;
-                self.sys.refresh_components();
-            }
-            Message::SelectSensor(label) => {
-                self.selected_sensor = Some(label.clone());
-                let _ = config::save_selected_sensor(&label);
-                self.show_sensor_menu = false;
-                self.sys.refresh_components();
             }
         }
         cosmic::iced::Task::none()
@@ -408,49 +299,14 @@ impl cosmic::Application for Window {
         };
 
         let main_button = button::custom(content)
-            .on_press(Message::ToggleMenu)
             .padding([
                 self.core.applet.suggested_padding(horizontal),
                 self.core.applet.suggested_padding(!horizontal),
             ])
             .class(cosmic::theme::Button::AppletIcon);
 
-        // If menu is open, build a column with all temperature sensors
-        if self.show_sensor_menu {
-            // build vector of (kind,label,temp) and sort
-            let mut items: Vec<(String, String, f32)> = self
-                .sys
-                .components()
-                .iter()
-                .map(|c| {
-                    let label = c.label().to_string();
-                    let kind = Self::classify_label(&label).to_string();
-                    (kind, label, c.temperature())
-                })
-                .collect();
-
-            items.sort_by(|a, b| {
-                let cmp_kind = a.0.cmp(&b.0);
-                if cmp_kind == std::cmp::Ordering::Equal {
-                    a.1.cmp(&b.1)
-                } else {
-                    cmp_kind
-                }
-            });
-
-            let mut menu = column![];
-            for (kind, label, temp) in items {
-                let label_clone = label.clone();
-                let display = text(format!("{} — {} — {:.1} °C", kind, label, temp));
-                let btn = button::custom(display).on_press(Message::SelectSensor(label_clone));
-                menu = menu.push(btn.padding(4));
-            }
-
-            let layout = column![main_button, menu].spacing(4);
-            autosize::autosize(layout, cosmic::widget::Id::unique()).into()
-        } else {
-            autosize::autosize(main_button, cosmic::widget::Id::unique()).into()
-        }
+        // Selection menu removed: show only the metrics.
+        autosize::autosize(main_button, cosmic::widget::Id::unique()).into()
     }
 
     fn on_close_requested(&self, _id: cosmic::iced::window::Id) -> Option<Message> {
