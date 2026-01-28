@@ -79,3 +79,22 @@ This repository is a fork of the original netspeed applet by `khanra17`. To cont
 **License**
 
 This project is licensed under the GPL-3.0 License.
+
+
+
+
+requirements to add:
+```bash
+# Debian / Ubuntu
+sudo apt update
+sudo apt install rofi zenity
+
+# Fedora
+sudo dnf install rofi zenity
+
+# Arch
+sudo pacman -Syu rofi zenity
+
+# OpenSUSE
+sudo zypper install rofi zenity
+```
